@@ -18,8 +18,6 @@ pipeline {
       steps {
         dependencyCheck additionalArguments: '--scan . --format HTML --project "JuiceShop"', odcInstallation: 'OWASP-DC'
         dependencyCheckPublisher pattern: '**/dependency-check-report.xml'
-        
-        // Archive the report in the stage where it's generated
         archiveArtifacts artifacts: '**/dependency-check-report.html', allowEmptyArchive: true
       }
     }
@@ -73,8 +71,11 @@ pipeline {
   post {
     always {
       script {
-        // Clean workspace after all stages complete
-        cleanWs()
+        node {
+          // Only clean workspace if you really need to
+          // cleanWs() - Consider removing this as it may not be necessary
+          echo 'Pipeline completed - cleaning up'
+        }
       }
     }
     success {
