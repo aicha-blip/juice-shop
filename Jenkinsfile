@@ -2,7 +2,7 @@ pipeline {
   agent any
 
   environment {
-    SONARQUBE_TOKEN = credentials('sqp_967746c1d66d98341fb1b9b854066eea277f685e')  // Uses the token stored in Jenkins
+    SONARQUBE_TOKEN = credentials('sqp_9ec0b7b83d62b70bf9437719577a9fdd34c57091')  // Uses the token stored in Jenkins
   }
 
   stages {
