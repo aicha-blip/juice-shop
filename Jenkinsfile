@@ -29,7 +29,8 @@ pipeline {
             sonar-scanner \
               -Dsonar.projectKey=juice-shop \
               -Dsonar.sources=. \
-              -Dsonar.host.url=http://localhost:9000
+              -Dsonar.host.url=http://localhost:9000 \
+              -Dsonar.login=squ_8f777db6012a7010b24b6c9ca19a7d3a23297363
           '''
         }
       }
