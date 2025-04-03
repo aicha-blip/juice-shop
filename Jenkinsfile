@@ -2,13 +2,26 @@ pipeline {
   agent any
 
   environment {
-    SONARQUBE_TOKEN = credentials('squ_8f777db6012a7010b24b6c9ca19a7d3a23297363')
+    // Make sure this credential ID exists in Jenkins
+    SONARQUBE_TOKEN = credentials('SONARQUBE_TOKEN') 
   }
 
   stages {
     stage('Checkout') {
       steps {
         checkout scm
+      }
+    }
+
+    stage('Verify Environment') {
+      steps {
+        script {
+          // Verify SonarQube token is available
+          if (!env.SONARQUBE_TOKEN) {
+            error "SonarQube token not found in credentials"
+          }
+          echo "Using SonarQube token: ${SONARQUBE_TOKEN}"
+        }
       }
     }
 
@@ -22,14 +35,20 @@ pipeline {
 
     stage('SAST Scan') {
       steps {
-        withSonarQubeEnv('SonarQube') {
-          sh """
-            sonar-scanner \
-              -Dsonar.projectKey=juice-shop \
-              -Dsonar.sources=. \
-              -Dsonar.host.url=http://sonarqube:9000 \
-              -Dsonar.login=${SONARQUBE_TOKEN}
-          """
+        script {
+          try {
+            withSonarQubeEnv('SonarQube') {
+              sh """
+                sonar-scanner \
+                  -Dsonar.projectKey=juice-shop \
+                  -Dsonar.sources=. \
+                  -Dsonar.host.url=http://127.0.0.1:9000 \
+                  -Dsonar.login=${SONARQUBE_TOKEN}
+              """
+            }
+          } catch (Exception e) {
+            error "SonarQube scan failed: ${e.getMessage()}"
+          }
         }
       }
     }
@@ -61,15 +80,22 @@ pipeline {
   post {
     always {
       echo "Pipeline completed with status: ${currentBuild.currentResult}"
+      // Archive important files if needed
+      archiveArtifacts artifacts: '**/dependency-check-report.*', allowEmptyArchive: true
     }
     success {
       echo 'Pipeline succeeded!'
     }
     failure {
       echo 'Pipeline failed!'
-      mail to: 'team@example.com',
-           subject: "Failed Pipeline: ${currentBuild.fullDisplayName}",
-           body: "Check failed pipeline at ${env.BUILD_URL}"
+      // Only try to send email if mail server is configured
+      script {
+        if (env.JENKINS_MAIL_SERVER_CONFIGURED == 'true') {
+          mail to: 'aichabenzouina4@gmail.com',
+               subject: "Failed Pipeline: ${currentBuild.fullDisplayName}",
+               body: "Check failed pipeline at ${env.BUILD_URL}"
+        }
+      }
     }
   }
 }
