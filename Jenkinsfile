@@ -30,7 +30,7 @@ pipeline {
         script {
           def scannerHome = tool 'SonarQubeScanner'
           withSonarQubeEnv('SonarQube') {
-            sh "/var/jenkins_home/tools/hudson.plugins.sonar.SonarRunnerInstallation/SonarQubeScanner/bin/sonar-scanner -Dsonar.projectKey=juice-shop -Dsonar.sources=. -Dsonar.host.url=http://sonarqube:9000 -Dsonar.login=${SONARQUBE_TOKEN}"
+            sh "/var/jenkins_home/tools/hudson.plugins.sonar.SonarRunnerInstallation/SonarQubeScanner/bin/sonar-scanner -Dsonar.projectKey=juice-shop -Dsonar.sources=. -Dsonar.host.url=http://localhost:9000 -Dsonar.login=${SONARQUBE_TOKEN}"
           }
         }
       }
@@ -38,7 +38,7 @@ pipeline {
 
     stage('SCA Scan') {
       steps {
-        dependencyCheck additionalArguments: '--scan . --format HTML --project "JuiceShop"', odcInstallation: 'OWASP-DC'  // Correction: OWASP-DC au lieu de OWASP-DC
+        dependencyCheck additionalArguments: '--scan . --format HTML --project "JuiceShop"', odcInstallation: 'OWASP-DC'
         dependencyCheckPublisher pattern: '**/dependency-check-report.xml'
         archiveArtifacts artifacts: '**/dependency-check-report.html', allowEmptyArchive: true
       }
