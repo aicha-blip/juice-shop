@@ -2,8 +2,12 @@ pipeline {
   agent any
 
   environment {
-    // Assurez-vous que cette credential existe dans Jenkins
-    SONARQUBE_TOKEN = credentials('SONARQUBE_TOKEN') 
+    SONARQUBE_TOKEN = credentials('SONARQUBE_TOKEN')
+    SONARQUBE_URL = 'http://sonarqube:9000'
+  }
+
+  tools {
+    sonarqubeScanner 'SonarQubeScanner'
   }
 
   stages {
@@ -16,11 +20,12 @@ pipeline {
     stage('Verify Environment') {
       steps {
         script {
-          // Vérification du token SonarQube
           if (!env.SONARQUBE_TOKEN) {
             error "SonarQube token not found in credentials"
           }
-          echo "Using SonarQube token: ${SONARQUBE_TOKEN}"
+          // Safe logging without exposing credentials
+          echo "SonarQube token is configured" 
+          echo "Using SonarQube server at: ${SONARQUBE_URL}"
         }
       }
     }
@@ -28,9 +33,14 @@ pipeline {
     stage('SonarQube Analysis') {
       steps {
         script {
-          def scannerHome = tool 'SonarQubeScanner'
           withSonarQubeEnv('SonarQube') {
-            sh "${scannerHome}/bin/sonar-scanner -Dsonar.projectKey=juice-shop -Dsonar.sources=. -Dsonar.host.url=http://127.0.0.1:9000 -Dsonar.login=${SONARQUBE_TOKEN}"
+            sh '''
+              sonar-scanner \
+                -Dsonar.projectKey=juice-shop \
+                -Dsonar.sources=. \
+                -Dsonar.host.url=${SONARQUBE_URL} \
+                -Dsonar.login=${SONARQUBE_TOKEN}
+            '''
           }
         }
       }
@@ -38,7 +48,7 @@ pipeline {
 
     stage('SCA Scan') {
       steps {
-        dependencyCheck additionalArguments: '--scan . --format HTML --project "JuiceShop"', odcInstallation: 'OWASP-DC'  // Correction: OWASP-DC au lieu de OWASP-DC
+        dependencyCheck additionalArguments: '--scan . --format HTML --project "JuiceShop"', odcInstallation: 'OWASP-DC'
         dependencyCheckPublisher pattern: '**/dependency-check-report.xml'
         archiveArtifacts artifacts: '**/dependency-check-report.html', allowEmptyArchive: true
       }
