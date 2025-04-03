@@ -2,7 +2,7 @@ pipeline {
   agent any
 
   environment {
-    // Make sure this credential ID exists in Jenkins
+    // Assurez-vous que cette credential existe dans Jenkins
     SONARQUBE_TOKEN = credentials('SONARQUBE_TOKEN') 
   }
 
@@ -13,17 +13,10 @@ pipeline {
       }
     }
 
-    stage('SonarQube Analysis') {
-      def scannerHome = tool 'SonarQubeScanner';
-      withSonarQubeEnv() {
-        sh "${scannerHome}/bin/sonar-scanner"
-      }
-    }
-
     stage('Verify Environment') {
       steps {
         script {
-          // Verify SonarQube token is available
+          // Vérification du token SonarQube
           if (!env.SONARQUBE_TOKEN) {
             error "SonarQube token not found in credentials"
           }
@@ -32,31 +25,22 @@ pipeline {
       }
     }
 
-    stage('SCA Scan') {
+    stage('SonarQube Analysis') {
       steps {
-        dependencyCheck additionalArguments: '--scan . --format HTML --project "JuiceShop"', odcInstallation: 'OWASP-DC'
-        dependencyCheckPublisher pattern: '**/dependency-check-report.xml'
-        archiveArtifacts artifacts: '**/dependency-check-report.html', allowEmptyArchive: true
+        script {
+          def scannerHome = tool 'SonarQubeScanner'
+          withSonarQubeEnv('SonarQube') {
+            sh "${scannerHome}/bin/sonar-scanner -Dsonar.projectKey=juice-shop -Dsonar.sources=. -Dsonar.host.url=http://127.0.0.1:9000 -Dsonar.login=${SONARQUBE_TOKEN}"
+          }
+        }
       }
     }
 
-    stage('SAST Scan') {
+    stage('SCA Scan') {
       steps {
-        script {
-          try {
-            withSonarQubeEnv('SonarQube') {
-              sh """
-                sonar-scanner \
-                  -Dsonar.projectKey=juice-shop \
-                  -Dsonar.sources=. \
-                  -Dsonar.host.url=http://127.0.0.1:9000 \
-                  -Dsonar.login=${SONARQUBE_TOKEN}
-              """
-            }
-          } catch (Exception e) {
-            error "SonarQube scan failed: ${e.getMessage()}"
-          }
-        }
+        dependencyCheck additionalArguments: '--scan . --format HTML --project "JuiceShop"', odcInstallation: 'OWASP-DC'  // Correction: OWASP-DC au lieu de OWASP-DC
+        dependencyCheckPublisher pattern: '**/dependency-check-report.xml'
+        archiveArtifacts artifacts: '**/dependency-check-report.html', allowEmptyArchive: true
       }
     }
 
@@ -87,7 +71,6 @@ pipeline {
   post {
     always {
       echo "Pipeline completed with status: ${currentBuild.currentResult}"
-      // Archive important files if needed
       archiveArtifacts artifacts: '**/dependency-check-report.*', allowEmptyArchive: true
     }
     success {
@@ -95,7 +78,6 @@ pipeline {
     }
     failure {
       echo 'Pipeline failed!'
-      // Only try to send email if mail server is configured
       script {
         if (env.JENKINS_MAIL_SERVER_CONFIGURED == 'true') {
           mail to: 'aichabenzouina4@gmail.com',
