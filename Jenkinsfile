@@ -6,14 +6,12 @@ pipeline {
   }
 
   stages {
-    // Stage 1: Fetch code
     stage('Checkout') {
       steps {
-        git branch: 'master', url: 'https://github.com/aicha-blip/juice-shop.git'
+        checkout scm
       }
     }
 
-    // Stage 2: Software Composition Analysis (SCA)
     stage('SCA Scan') {
       steps {
         dependencyCheck additionalArguments: '--scan . --format HTML --project "JuiceShop"', odcInstallation: 'OWASP-DC'
@@ -22,36 +20,28 @@ pipeline {
       }
     }
 
-    // Stage 3: SAST with SonarQube
     stage('SAST Scan') {
       steps {
         withSonarQubeEnv('SonarQube') {
-          sh '''
+          sh """
             sonar-scanner \
               -Dsonar.projectKey=juice-shop \
               -Dsonar.sources=. \
-              -Dsonar.host.url=http://localhost:9000 \
+              -Dsonar.host.url=http://sonarqube:9000 \
               -Dsonar.login=${SONARQUBE_TOKEN}
-          '''
+          """
         }
       }
     }
 
-    // Stage 4: Security Gate
-    stage('Security Gate') {
+    stage('Quality Gate') {
       steps {
-        script {
-          timeout(time: 5, unit: 'MINUTES') {
-            def qg = waitForQualityGate()
-            if (qg.status != 'OK') {
-              error "Pipeline aborted due to SonarQube quality gate: ${qg.status}"
-            }
-          }
+        timeout(time: 5, unit: 'MINUTES') {
+          waitForQualityGate abortPipeline: true
         }
       }
     }
 
-    // Stage 5: Build & Deploy
     stage('Build & Deploy') {
       steps {
         script {
@@ -61,7 +51,7 @@ pipeline {
             sh 'docker rm juice-shop || true'
             sh 'docker run -d --name juice-shop -p 3000:3000 juice-shop'
           } catch (Exception e) {
-            echo "Deployment failed: ${e.getMessage()}"
+            error "Deployment failed: ${e.getMessage()}"
           }
         }
       }
@@ -70,19 +60,16 @@ pipeline {
 
   post {
     always {
-      script {
-        node {
-          // Only clean workspace if you really need to
-          // cleanWs() - Consider removing this as it may not be necessary
-          echo 'Pipeline completed - cleaning up'
-        }
-      }
+      echo "Pipeline completed with status: ${currentBuild.currentResult}"
     }
     success {
-      echo 'Pipeline completed successfully!'
+      echo 'Pipeline succeeded!'
     }
     failure {
       echo 'Pipeline failed!'
+      mail to: 'team@example.com',
+           subject: "Failed Pipeline: ${currentBuild.fullDisplayName}",
+           body: "Check failed pipeline at ${env.BUILD_URL}"
     }
   }
 }
