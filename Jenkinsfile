@@ -36,9 +36,15 @@ pipeline {
       }
     }
 
+    stage('Install Dependencies') {
+      steps {
+        sh 'npm install'
+      }
+    }
+
     stage('SCA Scan') {
       steps {
-        dependencyCheck additionalArguments: '--scan . --format HTML --project "JuiceShop"', odcInstallation: 'OWASP-DC'
+        dependencyCheck additionalArguments: '--scan . --format HTML,XML --project "JuiceShop" --disableAssembly', odcInstallation: 'OWASP-DC'
         dependencyCheckPublisher pattern: '**/dependency-check-report.xml'
         archiveArtifacts artifacts: '**/dependency-check-report.html', allowEmptyArchive: true
       }
