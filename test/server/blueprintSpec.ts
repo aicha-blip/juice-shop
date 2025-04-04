@@ -14,12 +14,11 @@ const { pipeline } = require('stream')
 const fetch = require('node-fetch')
 
 async function parseExifData (path: string): Promise<any> {
-  return await new Promise((resolve, reject) => {
-    // eslint-disable-next-line no-new
+  return new Promise((resolve, reject) => {
     new ExifImage({ image: path }, (error: Error | null, exifData: any) => {
-      if (error != null) {
-        expect.fail(`Could not read EXIF data from ${path}`)
+      if (error) {
         reject(error)
+        return
       }
       resolve(exifData)
     })
