@@ -1,6 +1,15 @@
 # Stage 1: Install dependencies and build
 FROM node:20-buster AS installer
 
+# Fix 1: Install build tools
+RUN apt-get update && \
+    apt-get install -y python3 make g++ && \
+    rm -rf /var/lib/apt/lists/*
+
+# Fix 2: Configure node-gyp
+RUN mkdir -p /root/.cache/node-gyp/20.15.0
+ENV npm_config_build_from_source=false
+
 # Force Git to use HTTPS instead of SSH for GitHub
 RUN git config --global url."https://github.com/".insteadOf "git@github.com:" && \
     git config --global url."https://github.com/".insteadOf "ssh://git@github.com/"
