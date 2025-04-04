@@ -30,7 +30,7 @@ pipeline {
         script {
           def scannerHome = tool 'SonarQubeScanner'
           withSonarQubeEnv('SonarQube') {
-            sh "/var/jenkins_home/tools/hudson.plugins.sonar.SonarRunnerInstallation/SonarQubeScanner/bin/sonar-scanner -Dsonar.projectKey=juice-shop -Dsonar.sources=. -Dsonar.host.url=http://10.17.0.93:9000 -Dsonar.login=${SONARQUBE_TOKEN}"
+            sh "/var/jenkins_home/tools/hudson.plugins.sonar.SonarRunnerInstallation/SonarQubeScanner/bin/sonar-scanner -Dsonar.projectKey=juice-shop -Dsonar.sources=. -Dsonar.host.url=http://10.17.0.197:9000 -Dsonar.login=${SONARQUBE_TOKEN}"
           }
         }
       }
