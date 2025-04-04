@@ -9,13 +9,7 @@ pipeline {
   stages {
     stage('Checkout') {
       steps {
-        checkout([
-            $class: 'GitSCM',
-            branches: [[name: '*/master']],
-            doGenerateSubmoduleConfigurations: false,
-            extensions: [[$class: 'CloneOption', noTags: false, reference: '', shallow: false, depth: 0, timeout: 10]],
-            userRemoteConfigs: [[url: 'https://github.com/aicha-blip/juice-shop.git']]
-        ])
+        checkout scm
       }
     }
 
@@ -42,15 +36,9 @@ pipeline {
       }
     }
 
-    stage('Install Dependencies') {
-      steps {
-        sh 'npm install'
-      }
-    }
-
     stage('SCA Scan') {
       steps {
-        dependencyCheck additionalArguments: '--scan . --format HTML,XML --project "JuiceShop" --disableAssembly', odcInstallation: 'OWASP-DC'
+        dependencyCheck additionalArguments: '--scan . --format HTML --project "JuiceShop"', odcInstallation: 'OWASP-DC'
         dependencyCheckPublisher pattern: '**/dependency-check-report.xml'
         archiveArtifacts artifacts: '**/dependency-check-report.html', allowEmptyArchive: true
       }
