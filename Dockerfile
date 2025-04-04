@@ -1,16 +1,17 @@
 # Stage 1: Install dependencies and build
 FROM node:20-buster AS installer
 
-# Fix 1: Install build tools
-RUN apt-get update && \
+# Fix DNS and install build tools
+RUN echo "nameserver 8.8.8.8" > /etc/resolv.conf && \
+    apt-get update && \
     apt-get install -y python3 make g++ && \
     rm -rf /var/lib/apt/lists/*
 
-# Fix 2: Configure node-gyp
+# Configure node-gyp and npm
 RUN mkdir -p /root/.cache/node-gyp/20.15.0
 ENV npm_config_build_from_source=false
 
-# Force Git to use HTTPS instead of SSH for GitHub
+# Force HTTPS for GitHub
 RUN git config --global url."https://github.com/".insteadOf "git@github.com:" && \
     git config --global url."https://github.com/".insteadOf "ssh://git@github.com/"
 
@@ -38,10 +39,16 @@ ARG CYCLONEDX_NPM_VERSION=latest
 RUN npm install -g @cyclonedx/cyclonedx-npm@$CYCLONEDX_NPM_VERSION
 RUN npm run sbom
 
-# Stage 2: Rebuild libxmljs (required for ARM support)
+# Stage 2: Rebuild libxmljs
 FROM node:20-buster AS libxmljs-builder
+
+# Fix DNS and install build tools for this stage
+RUN echo "nameserver 8.8.8.8" > /etc/resolv.conf && \
+    apt-get update && \
+    apt-get install -y build-essential python3 && \
+    rm -rf /var/lib/apt/lists/*
+
 WORKDIR /juice-shop
-RUN apt-get update && apt-get install -y build-essential python3
 COPY --from=installer /juice-shop/node_modules ./node_modules
 RUN rm -rf node_modules/libxmljs/build && \
     cd node_modules/libxmljs && \
