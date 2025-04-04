@@ -9,7 +9,13 @@ pipeline {
   stages {
     stage('Checkout') {
       steps {
-        checkout scm
+        checkout([
+            $class: 'GitSCM',
+            branches: [[name: '*/master']],
+            doGenerateSubmoduleConfigurations: false,
+            extensions: [[$class: 'CloneOption', noTags: false, reference: '', shallow: false, depth: 0, timeout: 10]],
+            userRemoteConfigs: [[url: 'https://github.com/aicha-blip/juice-shop.git']]
+        ])
       }
     }
 
