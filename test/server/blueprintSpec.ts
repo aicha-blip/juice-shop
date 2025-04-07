@@ -8,14 +8,19 @@ import { ExifImage } from 'exif'
 import sinonChai = require('sinon-chai')
 const expect = chai.expect
 chai.use(sinonChai)
+
 const fs = require('fs')
 const utils = require('../../lib/utils')
 const { pipeline } = require('stream')
 const fetch = require('node-fetch')
 
-async function parseExifData (path: string): Promise<any> {
+type ExifData = {
+  image: Record<string, unknown>
+}
+
+async function parseExifData(imagePath: string): Promise<ExifData> {
   return new Promise((resolve, reject) => {
-    new ExifImage({ image: path }, (error: Error | null, exifData: any) => {
+    new ExifImage({ image: imagePath }, (error: Error | null, exifData: ExifData) => {
       if (error) {
         reject(error)
         return
@@ -27,32 +32,42 @@ async function parseExifData (path: string): Promise<any> {
 
 describe('blueprint', () => {
   const products = config.get<ProductConfig[]>('products')
-  let pathToImage: string = 'assets/public/images/products/'
+  const basePathToImage = 'assets/public/images/products/'
 
   describe('checkExifData', () => {
     it('should contain properties from exifForBlueprintChallenge', async () => {
       for (const product of products) {
         if (product.fileForRetrieveBlueprintChallenge && product.image) {
-          if (utils.isUrl(product.image)) {
-            pathToImage = path.resolve('frontend/dist/frontend', pathToImage, product.image.substring(product.image.lastIndexOf('/') + 1))
-            const streamPipeline = promisify(pipeline)
-            const response = await fetch(product.image)
-            if (!response.ok) expect.fail(`Could not download image from ${product.image}`)
-            await streamPipeline(response.body, fs.createWriteStream(pathToImage))
-          } else {
-            pathToImage = path.resolve('frontend/src', pathToImage, product.image)
-          }
+          let finalPathToImage: string
 
-          if (product.exifForBlueprintChallenge?.[0]) { // Prevents failing test for sample or custom themes where null has been explicitly set as value for "exifForBlueprintChallenge". Warning: This makes the "Retrieve Blueprint" challenge probably unsolvable unless hints are placed elsewhere.
-            try {
-              const exifData = await parseExifData(pathToImage)
+          try {
+            if (utils.isUrl(product.image)) {
+              finalPathToImage = path.resolve(
+                'frontend/dist/frontend',
+                basePathToImage,
+                path.basename(product.image)
+              )
+              const streamPipeline = promisify(pipeline)
+              const response = await fetch(product.image)
+              if (!response.ok) {
+                throw new Error(`Could not download image from ${product.image}`)
+              }
+              await streamPipeline(response.body, fs.createWriteStream(finalPathToImage))
+            } else {
+              finalPathToImage = path.resolve('frontend/src', basePathToImage, product.image)
+            }
+
+            if (product.exifForBlueprintChallenge?.length) {
+              const exifData = await parseExifData(finalPathToImage)
               const properties = Object.values(exifData.image)
               for (const property of product.exifForBlueprintChallenge) {
                 expect(properties).to.include(property)
               }
-            } catch (error) {
-              expect.fail(`Could not read EXIF data from ${pathToImage}`)
             }
+          } catch (error) {
+            // Log a detailed error per product
+            console.error(`Error processing product "${product.image}":`, error)
+            expect.fail(`Failed to validate EXIF data for ${product.image}: ${error}`)
           }
         }
       }
