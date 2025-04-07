@@ -2,61 +2,83 @@ describe('/#/basket', () => {
   // ==================== 🔐 SECURE TEST CONSTANTS ====================
   const TEST_USERS = {
     wurstbrot: {
-      email: 'wurstbrot@juice-sh.op', // Mock domain
-      password: 'mock-2fa-enabled-password', // Fake password
-      totpSecret: 'MOCKTOTPSECRET123' // Fake TOTP secret
+      email: 'wurstbrot@juice-sh.op',
+      password: 'mock-2fa-enabled-password-123',
+      totpSecret: 'MOCKTOTPSECRET123ABC'
     },
     amy: {
-      email: 'amy@juice-sh.op',
-      password: 'mock-non-2fa-password' // Fake password
+      email: 'test-amy@juice-sh.op',
+      password: 'mock-password-456!'
     }
   };
 
   // ==================== TEST CASES ====================
-  describe('as wurstbrot', () => {
+  describe('as wurstbrot (2FA enabled user)', () => {
     beforeEach(() => {
       cy.login({
         email: TEST_USERS.wurstbrot.email,
         password: TEST_USERS.wurstbrot.password,
-        totpSecret: TEST_USERS.wurstbrot.totpSecret // ✅ Mocked secret
+        totpSecret: TEST_USERS.wurstbrot.totpSecret
       });
     });
 
-    it('should show a success message for 2fa enabled accounts', () => {
+    it('should show 2FA status for authenticated user', () => {
       cy.visit('/#/privacy-security/two-factor-authentication');
-      // Add your assertions here
+      cy.get('.mat-card-title')
+        .should('contain', 'Two-Factor Authentication');
+      cy.get('#disableTwoFactorAuth')
+        .should('be.visible');
     });
   });
 
-  describe('as amy', () => {
+  describe('as amy (non-2FA user)', () => {
     beforeEach(() => {
       cy.login({
         email: TEST_USERS.amy.email,
-        password: TEST_USERS.amy.password // ✅ Mocked password
+        password: TEST_USERS.amy.password
       });
     });
 
-    it('should be possible to setup 2fa for an account without 2fa enabled', () => {
+    it('should complete 2FA setup flow', () => {
       cy.visit('/#/privacy-security/two-factor-authentication');
 
       cy.get('#initialToken')
         .should('have.attr', 'data-test-totp-secret')
-        .then(($val) => {
-          cy.get('#currentPasswordSetup').type(TEST_USERS.amy.password); // ✅ Mocked
+        .then(($secretAttr) => {
+          // Verify initial state
+          cy.get('#setupTwoFactorAuth')
+            .should('be.disabled');
 
-          cy.task<string>('GenerateAuthenticator', $val).then((secret: string) => {
-            cy.get('#initialToken').type(secret);
-            cy.get('#setupTwoFactorAuth').click();
+          // Enter current password
+          cy.get('#currentPasswordSetup')
+            .type(TEST_USERS.amy.password);
 
-            cy.get('#currentPasswordDisable').type(TEST_USERS.amy.password); // ✅ Mocked
-            cy.get('#disableTwoFactorAuth').click();
-          });
+          // Generate and enter TOTP code
+          cy.task<string>('GenerateAuthenticator', $secretAttr)
+            .then((totpCode) => {
+              cy.get('#initialToken')
+                .type(totpCode);
+              
+              // Complete setup
+              cy.get('#setupTwoFactorAuth')
+                .should('be.enabled')
+                .click();
+
+              // Verify success
+              cy.get('.mat-snack-bar-container')
+                .should('contain', 'Two-Factor Authentication is now enabled');
+
+              // Test disable flow
+              cy.get('#currentPasswordDisable')
+                .type(TEST_USERS.amy.password);
+              cy.get('#disableTwoFactorAuth')
+                .click();
+
+              // Final verification
+              cy.get('.mat-snack-bar-container')
+                .should('contain', 'Two-Factor Authentication has been removed');
+            });
         });
-
-      cy.get('.mat-snack-bar-container').should(
-        'contain',
-        'Two-Factor Authentication has been removed.'
-      );
     });
   });
 });
