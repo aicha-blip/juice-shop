@@ -4,12 +4,12 @@ import type { Product as ProductConfig } from 'lib/config.types'
 
 import path from 'path'
 import { promisify } from 'util'
-import { ExifImage } from 'exif'
 import sinonChai = require('sinon-chai')
+import fs from 'fs'
+import ExifParser from 'exif-parser'
 const expect = chai.expect
 chai.use(sinonChai)
 
-const fs = require('fs')
 const utils = require('../../lib/utils')
 const { pipeline } = require('stream')
 const fetch = require('node-fetch')
@@ -20,13 +20,14 @@ type ExifData = {
 
 async function parseExifData(imagePath: string): Promise<ExifData> {
   return new Promise((resolve, reject) => {
-    new ExifImage({ image: imagePath }, (error: Error | null, exifData: ExifData) => {
-      if (error) {
-        reject(error)
-        return
-      }
-      resolve(exifData)
-    })
+    try {
+      const buffer = fs.readFileSync(imagePath)
+      const parser = ExifParser.create(buffer)
+      const result = parser.parse()
+      resolve({ image: result.tags }) // Match your ExifData type
+    } catch (error) {
+      reject(error)
+    }
   })
 }
 
