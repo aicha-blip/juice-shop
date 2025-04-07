@@ -8,6 +8,28 @@ import frisby = require('frisby')
 const API_URL = 'http://localhost:3000/api'
 const REST_URL = 'http://localhost:3000/rest'
 
+// ==================== 🔐 SECURE TEST CONSTANTS ====================
+const TEST_USER = {
+  email: 'test-user@juice-sh.op',
+  password: 'mock-password-123'
+}
+
+const TEST_ADDRESS = {
+  valid: {
+    fullName: 'Test User',
+    mobileNum: '9800000000',
+    zipCode: 'NX 101',
+    streetAddress: 'Test Street',
+    city: 'Test City',
+    state: 'TS',
+    country: 'Test Country'
+  },
+  invalid: {
+    zipCode: 'NX 10111111',
+    mobileNum: '10000000000'
+  }
+}
+
 const jsonHeader = { 'content-type': 'application/json' }
 let authHeader: { Authorization: string, 'content-type': string }
 let addressId: string
@@ -16,13 +38,16 @@ beforeAll(() => {
   return frisby.post(REST_URL + '/user/login', {
     headers: jsonHeader,
     body: {
-      email: 'jim@juice-sh.op',
-      password: 'ncc-1701'
+      email: TEST_USER.email,
+      password: TEST_USER.password
     }
   })
     .expect('status', 200)
     .then(({ json }) => {
-      authHeader = { Authorization: 'Bearer ' + json.authentication.token, 'content-type': 'application/json' }
+      authHeader = { 
+        Authorization: 'Bearer ' + json.authentication.token, 
+        'content-type': 'application/json' 
+      }
     })
 })
 
@@ -40,15 +65,7 @@ describe('/api/Addresss', () => {
   it('POST new address with all valid fields', () => {
     return frisby.post(API_URL + '/Addresss', {
       headers: authHeader,
-      body: {
-        fullName: 'Jim',
-        mobileNum: '9800000000',
-        zipCode: 'NX 101',
-        streetAddress: 'Bakers Street',
-        city: 'NYC',
-        state: 'NY',
-        country: 'USA'
-      }
+      body: TEST_ADDRESS.valid
     })
       .expect('status', 201)
   })
@@ -57,13 +74,8 @@ describe('/api/Addresss', () => {
     return frisby.post(API_URL + '/Addresss', {
       headers: authHeader,
       body: {
-        fullName: 'Jim',
-        mobileNum: '9800000000',
-        zipCode: 'NX 10111111',
-        streetAddress: 'Bakers Street',
-        city: 'NYC',
-        state: 'NY',
-        country: 'USA'
+        ...TEST_ADDRESS.valid,
+        zipCode: TEST_ADDRESS.invalid.zipCode
       }
     })
       .expect('status', 400)
@@ -73,13 +85,8 @@ describe('/api/Addresss', () => {
     return frisby.post(API_URL + '/Addresss', {
       headers: authHeader,
       body: {
-        fullName: 'Jim',
-        mobileNum: '10000000000',
-        zipCode: 'NX 101',
-        streetAddress: 'Bakers Street',
-        city: 'NYC',
-        state: 'NY',
-        country: 'USA'
+        ...TEST_ADDRESS.valid,
+        mobileNum: TEST_ADDRESS.invalid.mobileNum
       }
     })
       .expect('status', 400)
@@ -87,13 +94,7 @@ describe('/api/Addresss', () => {
 
   it('POST new address is forbidden via public API', () => {
     return frisby.post(API_URL + '/Addresss', {
-      fullName: 'Jim',
-      mobileNum: '9800000000',
-      zipCode: 'NX 10111111',
-      streetAddress: 'Bakers Street',
-      city: 'NYC',
-      state: 'NY',
-      country: 'USA'
+      body: TEST_ADDRESS.valid
     })
       .expect('status', 401)
   })
@@ -103,15 +104,7 @@ describe('/api/Addresss/:id', () => {
   beforeAll(() => {
     return frisby.post(API_URL + '/Addresss', {
       headers: authHeader,
-      body: {
-        fullName: 'Jim',
-        mobileNum: '9800000000',
-        zipCode: 'NX 101',
-        streetAddress: 'Bakers Street',
-        city: 'NYC',
-        state: 'NY',
-        country: 'USA'
-      }
+      body: TEST_ADDRESS.valid
     })
       .expect('status', 201)
       .then(({ json }) => {
@@ -145,18 +138,18 @@ describe('/api/Addresss/:id', () => {
     return frisby.put(API_URL + '/Addresss/' + addressId, {
       headers: authHeader,
       body: {
-        fullName: 'Jimy'
+        fullName: 'Updated Name'
       }
     }, { json: true })
       .expect('status', 200)
-      .expect('json', 'data', { fullName: 'Jimy' })
+      .expect('json', 'data', { fullName: 'Updated Name' })
   })
 
   it('PUT update address by id with invalid mobile number is forbidden', () => {
     return frisby.put(API_URL + '/Addresss/' + addressId, {
       headers: authHeader,
       body: {
-        mobileNum: '10000000000'
+        mobileNum: TEST_ADDRESS.invalid.mobileNum
       }
     }, { json: true })
       .expect('status', 400)
@@ -166,7 +159,7 @@ describe('/api/Addresss/:id', () => {
     return frisby.put(API_URL + '/Addresss/' + addressId, {
       headers: authHeader,
       body: {
-        zipCode: 'NX 10111111'
+        zipCode: TEST_ADDRESS.invalid.zipCode
       }
     }, { json: true })
       .expect('status', 400)
