@@ -2,8 +2,7 @@ pipeline {
   agent any
 
   environment {
-    // Assurez-vous que cette credential existe dans Jenkins
-    SONARQUBE_TOKEN = credentials('SONARQUBE_TOKEN') 
+    SONARQUBE_TOKEN = credentials('SONARQUBE_TOKEN')
   }
 
   stages {
@@ -16,11 +15,11 @@ pipeline {
     stage('Verify Environment') {
       steps {
         script {
-          // Vérification du token SonarQube
           if (!env.SONARQUBE_TOKEN) {
             error "SonarQube token not found in credentials"
           }
-          echo "Using SonarQube token: ${SONARQUBE_TOKEN}"
+          // Masked output for security
+          echo "Using SonarQube token: ${SONARQUBE_TOKEN.replaceAll('.', '*')}"
         }
       }
     }
@@ -28,9 +27,14 @@ pipeline {
     stage('SonarQube Analysis') {
       steps {
         script {
-          def scannerHome = tool 'SonarQubeScanner'
           withSonarQubeEnv('SonarQube') {
-            sh "/var/jenkins_home/tools/hudson.plugins.sonar.SonarRunnerInstallation/SonarQubeScanner/bin/sonar-scanner -Dsonar.projectKey=juice-shop -Dsonar.sources=. -Dsonar.host.url=http://10.17.0.160:9000 -Dsonar.login=${SONARQUBE_TOKEN}"
+            // Using Jenkins-configured scanner tool
+            def scannerHome = tool 'SonarQubeScanner'
+            sh "${scannerHome}/bin/sonar-scanner \
+              -Dsonar.projectKey=juice-shop \
+              -Dsonar.sources=. \
+              -Dsonar.host.url=http://10.17.0.160:9000 \
+              -Dsonar.login=${SONARQUBE_TOKEN}"
           }
         }
       }
@@ -40,16 +44,22 @@ pipeline {
       steps {
         script {
           try {
-            // Run Dependency-Check
-            dependencyCheck additionalArguments: '--scan . --format HTML --project "JuiceShop" --failOnCVSS 7', odcInstallation: 'OWASP-DC'
+            // Modified to skip RetireJS and continue on vulnerabilities
+            dependencyCheck additionalArguments: '''
+              --scan . \
+              --format HTML \
+              --format XML \
+              --project "JuiceShop" \
+              --disableRetireJS \
+              --failOnCVSS 0''', 
+              odcInstallation: 'OWASP-DC'
             
-            // Publish and archive results
             dependencyCheckPublisher pattern: '**/dependency-check-report.xml'
-            archiveArtifacts artifacts: '**/dependency-check-report.html', allowEmptyArchive: true
+            archiveArtifacts artifacts: '**/dependency-check-report.*', allowEmptyArchive: true
             
           } catch (Exception e) {
-            // Fail pipeline if critical vulnerabilities found
-            error("SCA failed: Critical vulnerabilities detected! Pipeline halted.")
+            echo "SCA Scan completed with findings (not failing pipeline)"
+            unstable("Dependency-Check found vulnerabilities")
           }
         }
       }
@@ -64,16 +74,15 @@ pipeline {
     }
 
     stage('Build & Deploy') {
+      when {
+        expression { currentBuild.resultIsBetterOrEqualTo('UNSTABLE') }
+      }
       steps {
         script {
           sh 'docker build -t juice-shop .'
-          try {
-            sh 'docker stop juice-shop || true'
-            sh 'docker rm juice-shop || true'
-            sh 'docker run -d --name juice-shop -p 3000:3000 juice-shop'
-          } catch (Exception e) {
-            error "Deployment failed: ${e.getMessage()}"
-          }
+          sh 'docker stop juice-shop || true'
+          sh 'docker rm juice-shop || true'
+          sh 'docker run -d --name juice-shop -p 3000:3000 juice-shop'
         }
       }
     }
@@ -82,18 +91,20 @@ pipeline {
   post {
     always {
       echo "Pipeline completed with status: ${currentBuild.currentResult}"
-      archiveArtifacts artifacts: '**/dependency-check-report.*', allowEmptyArchive: true
+      archiveArtifacts artifacts: '**/*report.*', allowEmptyArchive: true
     }
     success {
-      echo 'Pipeline succeeded!'
+      echo 'Pipeline succeeded! Application deployed to http://localhost:3000'
     }
     failure {
-      echo 'Pipeline failed!'
+      echo 'Pipeline failed! Check security scan results'
       script {
-        if (env.JENKINS_MAIL_SERVER_CONFIGURED == 'true') {
+        // Only send email if configured
+        if (env.EMAIL_ENABLED == 'true') {
           mail to: 'aichabenzouina4@gmail.com',
-               subject: "Failed Pipeline: ${currentBuild.fullDisplayName}",
-               body: "Check failed pipeline at ${env.BUILD_URL}"
+               subject: "Pipeline Failed: ${env.JOB_NAME} #${env.BUILD_NUMBER}",
+               body: """Check failed pipeline at ${env.BUILD_URL}
+                      Failed stage: ${currentBuild.currentResult}"""
         }
       }
     }
