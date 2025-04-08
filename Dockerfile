@@ -53,7 +53,7 @@ RUN rm -rf node_modules/libxmljs/build && \
     npm run build
 
 # Stage 2: Distroless runtime
-FROM gcr.io/distroless/nodejs20-debian11@sha256:66b32a70e5d6a3d740673a8efbdc18135f706f93cbab74a3403c5d48ed089e3e
+FROM gcr.io/distroless/nodejs20-debian11:latest
 
 LABEL maintainer="Bjoern Kimminich <bjoern.kimminich@owasp.org>" \
     org.opencontainers.image.title="OWASP Juice Shop" \
