@@ -38,9 +38,20 @@ pipeline {
 
     stage('SCA Scan') {
       steps {
-        dependencyCheck additionalArguments: '--scan . --format HTML --project "JuiceShop"', odcInstallation: 'OWASP-DC'
-        dependencyCheckPublisher pattern: '**/dependency-check-report.xml'
-        archiveArtifacts artifacts: '**/dependency-check-report.html', allowEmptyArchive: true
+        script {
+          try {
+            // Run Dependency-Check
+            dependencyCheck additionalArguments: '--scan . --format HTML --project "JuiceShop" --failOnCVSS 7', odcInstallation: 'OWASP-DC'
+            
+            // Publish and archive results
+            dependencyCheckPublisher pattern: '**/dependency-check-report.xml'
+            archiveArtifacts artifacts: '**/dependency-check-report.html', allowEmptyArchive: true
+            
+          } catch (Exception e) {
+            // Fail pipeline if critical vulnerabilities found
+            error("SCA failed: Critical vulnerabilities detected! Pipeline halted.")
+          }
+        }
       }
     }
 
