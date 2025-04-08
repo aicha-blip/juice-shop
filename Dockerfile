@@ -14,16 +14,26 @@ ENV npm_config_build_from_source=false
 RUN git config --global url."https://github.com/".insteadOf "git@github.com:" && \
     git config --global url."https://github.com/".insteadOf "ssh://git@github.com/"
 
-COPY . /juice-shop
+# Set workdir and copy package files first (for better caching)
 WORKDIR /juice-shop
+COPY package*.json ./
 
-# Install with increased memory limit
-RUN NODE_OPTIONS="--max-old-space-size=4096" npm i -g typescript ts-node
+# Install global tools
+RUN NODE_OPTIONS="--max-old-space-size=4096" npm install -g typescript ts-node
+
+# Install project dependencies
 RUN NODE_OPTIONS="--max-old-space-size=4096" npm install --omit=dev --unsafe-perm
+
+# Copy rest of the app
+COPY . .
+
+# Dedupe packages
 RUN npm dedupe --omit=dev
 
-# Cleanup
+# Cleanup frontend junk
 RUN rm -rf frontend/node_modules frontend/.angular frontend/src/assets
+
+# Create logs dir
 RUN mkdir logs
 
 # Fix permissions
@@ -34,14 +44,14 @@ RUN chmod -R g=u ftp/ frontend/dist/ logs/ data/ i18n/
 RUN rm -f data/chatbot/botDefaultTrainingData.json ftp/legal.md i18n/*.json
 
 # Generate SBOM
-ARG CYCLONEDX_NPM_VERSION=latest
+ARG CYCLONEDX_NPM_VERSION=3.10.0   # <-- locked version
 RUN npm install -g @cyclonedx/cyclonedx-npm@$CYCLONEDX_NPM_VERSION
 RUN npm run sbom
 
 # Stage 2: Rebuild libxmljs
 FROM node:20-buster AS libxmljs-builder
 
-# Install build tools (without modifying resolv.conf)
+# Install build tools
 RUN apt-get update && \
     apt-get install -y build-essential python3 && \
     rm -rf /var/lib/apt/lists/*
@@ -53,7 +63,7 @@ RUN rm -rf node_modules/libxmljs/build && \
     npm run build
 
 # Stage 3: Final distroless image
-FROM gcr.io/distroless/nodejs20-debian11
+FROM gcr.io/distroless/nodejs20-debian11@sha256:66b32a70e5d6a3d740673a8efbdc18135f706f93cbab74a3403c5d48ed089e3e
 
 # Metadata
 LABEL maintainer="Bjoern Kimminich <bjoern.kimminich@owasp.org>" \
@@ -70,7 +80,7 @@ LABEL maintainer="Bjoern Kimminich <bjoern.kimminich@owasp.org>" \
     org.opencontainers.image.created=$BUILD_DATE
 
 WORKDIR /juice-shop
-COPY --from=installer --chown=65532:0 /juice-shop .
+COPY --from=installer --chown=65532:0 /juice-shop . 
 COPY --chown=65532:0 --from=libxmljs-builder /juice-shop/node_modules/libxmljs ./node_modules/libxmljs
 
 USER 65532
