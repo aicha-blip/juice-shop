@@ -3,7 +3,7 @@ pipeline {
 
   environment {
     SONARQUBE_TOKEN = credentials('SONARQUBE_TOKEN')
-    COMPUTER_NAME = "DESKTOP-ABC123"  // ← Replace with your computer name
+    COMPUTER_NAME = "aicha"
     DOCKER_HOSTNAME = "${COMPUTER_NAME}.local"
   }
 
