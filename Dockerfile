@@ -1,9 +1,8 @@
 # Stage 1: Install dependencies and build
 FROM node:20-buster AS installer
 
-# Install build tools (with DNS fix)
-RUN echo "nameserver 8.8.8.8" > /etc/resolv.conf && \
-    apt-get update && \
+# Install build tools (with DNS workaround)
+RUN apt-get update || true && \
     apt-get install -y python3 make g++ && \
     rm -rf /var/lib/apt/lists/*
 
@@ -38,9 +37,8 @@ RUN npm install -g @cyclonedx/cyclonedx-npm@$CYCLONEDX_NPM_VERSION && \
 # Stage 2: Rebuild libxmljs
 FROM node:20-buster AS libxmljs-builder
 
-# Install build tools (with DNS fix)
-RUN echo "nameserver 8.8.8.8" > /etc/resolv.conf && \
-    apt-get update && \
+# Install build tools (without DNS modification)
+RUN apt-get update && \
     apt-get install -y python3 gcc g++ make && \
     rm -rf /var/lib/apt/lists/*
 
