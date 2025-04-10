@@ -1,6 +1,12 @@
 # Stage 1: Install dependencies and build
 FROM node:20-buster AS installer
 
+# Fix DNS first by overriding resolv.conf
+RUN echo "nameserver 8.8.8.8" > /etc/resolv.conf && \
+    apt-get update && \
+    apt-get install -y python3 make g++ && \
+    rm -rf /var/lib/apt/lists/*
+
 # Install build tools (without modifying resolv.conf)
 RUN apt-get update && \
     apt-get install -y python3 make g++ && \
@@ -40,6 +46,12 @@ RUN npm run sbom
 
 # Stage 2: Rebuild libxmljs
 FROM node:20-buster AS libxmljs-builder
+
+# Fix DNS and use alternative packages
+RUN echo "nameserver 8.8.8.8" > /etc/resolv.conf && \
+    apt-get update && \
+    apt-get install -y python3 gcc g++ make && \  # Alternative to build-essential
+    rm -rf /var/lib/apt/lists/*
 
 # Install build tools (without modifying resolv.conf)
 RUN apt-get update && \
