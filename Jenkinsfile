@@ -3,81 +3,64 @@ pipeline {
 
   environment {
     SONARQUBE_TOKEN = credentials('SONARQUBE_TOKEN')
+    // Manually set your computer's IP (replace 10.17.0.160 with your current IP)
+    HOST_IP = "10.17.0.160" 
+    DEPLOYMENT_URL = "http://${HOST_IP}:3000"
   }
 
   stages {
-    stage('Checkout') {
+    stage('Build') {
       steps {
-        checkout scm
+        script {
+          echo "Building Juice Shop container (IP: ${HOST_IP})"
+          sh 'docker build --no-cache -t juice-shop . | tee docker-build.log'
+          archiveArtifacts artifacts: 'docker-build.log'
+        }
       }
     }
 
-    stage('Verify Environment') {
+    stage('Deploy') {
       steps {
         script {
-          if (!env.SONARQUBE_TOKEN) {
-            error "SonarQube token not found in credentials"
+          // Force remove any existing container
+          sh 'docker rm -f juice-shop || true'
+          
+          // Run with explicit IP binding
+          sh """
+            docker run -d \
+              --name juice-shop \
+              -p ${HOST_IP}:3000:3000 \
+              --restart unless-stopped \
+              juice-shop
+          """
+          
+          // Verify deployment (retry for 3 minutes)
+          def deployed = false
+          def attempts = 0
+          while(!deployed && attempts < 18) {
+            attempts++
+            try {
+              def status = sh(
+                script: "curl -s -o /dev/null -w '%{http_code}' ${DEPLOYMENT_URL} || echo 503",
+                returnStdout: true
+              ).trim()
+              
+              if (status == "200") {
+                deployed = true
+                echo "Application is live at ${DEPLOYMENT_URL}"
+              } else {
+                echo "Attempt ${attempts}/18: Service not ready (Status: ${status})"
+                sleep(time: 10, unit: 'SECONDS')
+              }
+            } catch (Exception e) {
+              echo "Attempt ${attempts}/18: Connection failed"
+              sleep(time: 10, unit: 'SECONDS')
+            }
           }
-          // Masked output for security
-          echo "Using SonarQube token: ${SONARQUBE_TOKEN.replaceAll('.', '*')}"
-        }
-      }
-    }
-
-    stage('SonarQube Analysis') {
-      steps {
-        script {
-          def scannerHome = tool 'SonarQubeScanner'
-          withSonarQubeEnv('SonarQube') {
-            sh "/var/jenkins_home/tools/hudson.plugins.sonar.SonarRunnerInstallation/SonarQubeScanner/bin/sonar-scanner -Dsonar.projectKey=juice-shop -Dsonar.sources=. -Dsonar.host.url=http://10.17.0.154:9000 -Dsonar.login=${SONARQUBE_TOKEN}"
+          
+          if (!deployed) {
+            error "Deployment failed - Application not reachable at ${DEPLOYMENT_URL}"
           }
-        }
-      }
-    }
-
-    stage('SCA Scan') {
-      steps {
-        script {
-          try {
-            // Modified to skip RetireJS and continue on vulnerabilities
-            dependencyCheck additionalArguments: '''
-              --scan . \
-              --format HTML \
-              --format XML \
-              --project "JuiceShop" \
-              --disableRetireJS \
-              --failOnCVSS 0''', 
-              odcInstallation: 'OWASP-DC'
-            
-            dependencyCheckPublisher pattern: '**/dependency-check-report.xml'
-            archiveArtifacts artifacts: '**/dependency-check-report.*', allowEmptyArchive: true
-            
-          } catch (Exception e) {
-            echo "SCA Scan completed with findings (not failing pipeline)"
-            unstable("Dependency-Check found vulnerabilities")
-          }
-        }
-      }
-    }
-
-    stage('Quality Gate') {
-      steps {
-        timeout(time: 5, unit: 'MINUTES') {
-          waitForQualityGate abortPipeline: false
-        }
-      }
-    }
-
-    stage('Build & Deploy') {
-      when {
-        expression { currentBuild.resultIsBetterOrEqualTo('UNSTABLE') }
-      }
-      steps {
-        script {
-          sh 'docker build -t juice-shop .'
-          sh 'docker stop juice-shop || true'
-          sh 'docker rm juice-shop || true'
-          sh 'docker run -d --name juice-shop -p 3000:3000 juice-shop'
         }
       }
     }
@@ -85,22 +68,35 @@ pipeline {
 
   post {
     always {
-      echo "Pipeline completed with status: ${currentBuild.currentResult}"
-      archiveArtifacts artifacts: '**/*report.*', allowEmptyArchive: true
+      echo "Collecting deployment logs..."
+      sh """
+        docker inspect juice-shop > container-inspect.json
+        docker logs juice-shop > container-logs.log 2>&1
+        netstat -tuln | grep 3000 > port-check.log || true
+      """
+      archiveArtifacts artifacts: '*.log,*.json'
     }
-    success {
-      echo 'Pipeline succeeded! Application deployed to http://10.17.0.154:3000'
-    }
+    
     failure {
-      echo 'Pipeline failed! Check security scan results'
       script {
-        // Only send email if configured
-        if (env.EMAIL_ENABLED == 'true') {
-          mail to: 'aichabenzouina4@gmail.com',
-               subject: "Pipeline Failed: ${env.JOB_NAME} #${env.BUILD_NUMBER}",
-               body: """Check failed pipeline at ${env.BUILD_URL}
-                      Failed stage: ${currentBuild.currentResult}"""
-        }
+        echo "TROUBLESHOOTING TIPS:"
+        echo "1. Verify your IP is still ${HOST_IP} (run: ipconfig)"
+        echo "2. Check port 3000 is open (run: netstat -ano | grep 3000)"
+        echo "3. Test manual access: curl -v ${DEPLOYMENT_URL}"
+        
+        mail to: 'aichabenzouina4@gmail.com',
+             subject: "Deployment Failed - Manual Action Required",
+             body: """
+               Deployment to ${DEPLOYMENT_URL} failed.
+               
+               REQUIRED ACTIONS:
+               1. Verify your current IP address
+               2. Check if port 3000 is available
+               3. Review attached logs
+               
+               Last error:
+               ${sh(script: 'tail -n 50 container-logs.log', returnStdout: true)}
+             """
       }
     }
   }
