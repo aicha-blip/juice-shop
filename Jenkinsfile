@@ -89,7 +89,7 @@ pipeline {
       archiveArtifacts artifacts: '**/*report.*', allowEmptyArchive: true
     }
     success {
-      echo 'Pipeline succeeded! Application deployed to http://localhost:3000'
+      echo 'Pipeline succeeded! Application deployed to http://10.17.0.154:3000'
     }
     failure {
       echo 'Pipeline failed! Check security scan results'
