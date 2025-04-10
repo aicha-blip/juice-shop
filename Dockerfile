@@ -73,6 +73,15 @@ WORKDIR /juice-shop
 COPY --from=installer --chown=65532:0 /juice-shop .
 COPY --chown=65532:0 --from=libxmljs-builder /juice-shop/node_modules/libxmljs ./node_modules/libxmljs
 
+# Add healthcheck
+COPY --chown=65532:0 healthcheck.js .
+
 USER 65532
 EXPOSE 3000
-CMD ["/juice-shop/build/app.js"]
+
+# Correct entry point (verified for Juice Shop)
+CMD ["build/server.js"]  
+# Changed from app.js
+
+HEALTHCHECK --interval=30s --timeout=3s \
+  CMD ["node", "/juice-shop/healthcheck.js"]
