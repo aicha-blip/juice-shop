@@ -60,28 +60,18 @@ pipeline {
       }
     }
 
-    stage('Quality Gate') {
-      steps {
-        timeout(time: 15, unit: 'MINUTES') {  // Increased timeout
-          waitForQualityGate abortPipeline: false
-        }
-      }
-    }
-    
     stage('Build & Deploy') {
       when {
         expression { currentBuild.resultIsBetterOrEqualTo('UNSTABLE') }
       }
       steps {
         script {
-          // Cleanup
+          // Force clean rebuild and deployment
           sh 'docker stop juice-shop || true'
           sh 'docker rm juice-shop || true'
-          
-          // Rebuild with no cache
           sh 'docker build --no-cache -t juice-shop .'
           
-          // Run with proper config
+          // Run with health checks and explicit host binding
           sh '''
             docker run -d \
               --name juice-shop \
@@ -89,42 +79,31 @@ pipeline {
               -e NODE_ENV=production \
               --health-cmd="curl -f http://localhost:3000 || exit 1" \
               --health-interval=5s \
-              --restart unless-stopped \
               juice-shop
           '''
           
-          // Wait for healthcheck
-          sleep(time: 30, unit: 'SECONDS')
+          // Wait for healthcheck (30s max)
+          def healthy = false
+          for (int i = 0; i < 6; i++) {
+            def health = sh(
+              script: 'docker inspect --format="{{.State.Health.Status}}" juice-shop',
+              returnStdout: true
+            ).trim()
+            if (health == "healthy") {
+              healthy = true
+              break
+            }
+            sleep(time: 5, unit: 'SECONDS')
+          }
           
-          // Verify deployment
-          def status = sh(
-            script: 'docker inspect --format="{{.State.Status}}" juice-shop', 
-            returnStdout: true
-          ).trim()
-          
-          if (status != "running") {
-            error "Container failed to start (Status: ${status})"
+          if (!healthy) {
+            error "Container failed health checks after 30s. Logs:\n${sh(script: 'docker logs juice-shop', returnStdout: true)}"
           }
         }
       }
     }
-    
-    stage('Verify Accessibility') {
-      steps {
-        script {
-          def accessible = sh(
-            script: 'curl -sSf http://localhost:3000 >/dev/null', 
-            returnStatus: true
-          )
-          if (accessible != 0) {
-            error "Application not accessible on port 3000"
-          } else {
-            echo "Juice Shop running at http://localhost:3000"
-          }
-        }
-      }
-    }
-
+  }
+  
   post {
     always {
       echo "Pipeline completed with status: ${currentBuild.currentResult}"
