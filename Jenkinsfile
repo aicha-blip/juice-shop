@@ -35,7 +35,7 @@ pipeline {
               ${scannerHome}/bin/sonar-scanner \
               -Dsonar.projectKey=juice-shop \
               -Dsonar.sources=. \
-              -Dsonar.host.url=http://${DOCKER_HOSTNAME}:9000 \
+              -Dsonar.host.url=http://${COMPUTER_NAME}:9000 \
               -Dsonar.login=${SONARQUBE_TOKEN}
             """
           }
