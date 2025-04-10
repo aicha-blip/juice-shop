@@ -1,14 +1,9 @@
 # Stage 1: Install dependencies and build
 FROM node:20-buster AS installer
 
-# Fix DNS first by overriding resolv.conf
+# Install build tools (with DNS fix)
 RUN echo "nameserver 8.8.8.8" > /etc/resolv.conf && \
     apt-get update && \
-    apt-get install -y python3 make g++ && \
-    rm -rf /var/lib/apt/lists/*
-
-# Install build tools (without modifying resolv.conf)
-RUN apt-get update && \
     apt-get install -y python3 make g++ && \
     rm -rf /var/lib/apt/lists/*
 
@@ -24,38 +19,29 @@ COPY . /juice-shop
 WORKDIR /juice-shop
 
 # Install with increased memory limit
-RUN NODE_OPTIONS="--max-old-space-size=4096" npm i -g typescript ts-node
-RUN NODE_OPTIONS="--max-old-space-size=4096" npm install --omit=dev --unsafe-perm
-RUN npm dedupe --omit=dev
+RUN NODE_OPTIONS="--max-old-space-size=4096" npm i -g typescript ts-node && \
+    NODE_OPTIONS="--max-old-space-size=4096" npm install --omit=dev --unsafe-perm && \
+    npm dedupe --omit=dev
 
-# Cleanup
-RUN rm -rf frontend/node_modules frontend/.angular frontend/src/assets
-RUN mkdir logs
-
-# Fix permissions
-RUN chown -R 65532:0 logs ftp/ frontend/dist/ data/ i18n/
-RUN chmod -R g=u ftp/ frontend/dist/ logs/ data/ i18n/
-
-# Remove optional files
-RUN rm -f data/chatbot/botDefaultTrainingData.json ftp/legal.md i18n/*.json
+# Cleanup - MOVED INTO RUN INSTRUCTION
+RUN rm -rf frontend/node_modules frontend/.angular frontend/src/assets && \
+    mkdir logs && \
+    chown -R 65532:0 logs ftp/ frontend/dist/ data/ i18n/ && \
+    chmod -R g=u ftp/ frontend/dist/ logs/ data/ i18n/ && \
+    rm -f data/chatbot/botDefaultTrainingData.json ftp/legal.md i18n/*.json
 
 # Generate SBOM
 ARG CYCLONEDX_NPM_VERSION=latest
-RUN npm install -g @cyclonedx/cyclonedx-npm@$CYCLONEDX_NPM_VERSION
-RUN npm run sbom
+RUN npm install -g @cyclonedx/cyclonedx-npm@$CYCLONEDX_NPM_VERSION && \
+    npm run sbom
 
 # Stage 2: Rebuild libxmljs
 FROM node:20-buster AS libxmljs-builder
 
-# Fix DNS and use alternative packages
+# Install build tools (with DNS fix)
 RUN echo "nameserver 8.8.8.8" > /etc/resolv.conf && \
     apt-get update && \
-    apt-get install -y python3 gcc g++ make && \  # Alternative to build-essential
-    rm -rf /var/lib/apt/lists/*
-
-# Install build tools (without modifying resolv.conf)
-RUN apt-get update && \
-    apt-get install -y build-essential python3 && \
+    apt-get install -y python3 gcc g++ make && \
     rm -rf /var/lib/apt/lists/*
 
 WORKDIR /juice-shop
@@ -77,23 +63,17 @@ LABEL maintainer="Bjoern Kimminich <bjoern.kimminich@owasp.org>" \
     org.opencontainers.image.licenses="MIT" \
     org.opencontainers.image.version="17.2.0" \
     org.opencontainers.image.url="https://owasp-juice.shop" \
-    org.opencontainers.image.source="https://github.com/juice-shop/juice-shop" \
-    org.opencontainers.image.revision=$VCS_REF \
-    org.opencontainers.image.created=$BUILD_DATE
+    org.opencontainers.image.source="https://github.com/juice-shop/juice-shop"
 
 WORKDIR /juice-shop
 COPY --from=installer --chown=65532:0 /juice-shop .
 COPY --chown=65532:0 --from=libxmljs-builder /juice-shop/node_modules/libxmljs ./node_modules/libxmljs
 
-# Add healthcheck
+# Health check
 COPY --chown=65532:0 healthcheck.js .
 
 USER 65532
 EXPOSE 3000
-
-# Correct entry point (verified for Juice Shop)
-CMD ["build/server.js"]  
-# Changed from app.js
-
 HEALTHCHECK --interval=30s --timeout=3s \
   CMD ["node", "/juice-shop/healthcheck.js"]
+CMD ["build/server.js"]
