@@ -62,26 +62,68 @@ pipeline {
 
     stage('Quality Gate') {
       steps {
-        timeout(time: 5, unit: 'MINUTES') {
+        timeout(time: 15, unit: 'MINUTES') {  // Increased timeout
           waitForQualityGate abortPipeline: false
         }
       }
     }
-
+    
     stage('Build & Deploy') {
       when {
         expression { currentBuild.resultIsBetterOrEqualTo('UNSTABLE') }
       }
       steps {
         script {
-          sh 'docker build -t juice-shop .'
+          // Cleanup
           sh 'docker stop juice-shop || true'
           sh 'docker rm juice-shop || true'
-          sh 'docker run -d --name juice-shop -p 3000:3000 juice-shop'
+          
+          // Rebuild with no cache
+          sh 'docker build --no-cache -t juice-shop .'
+          
+          // Run with proper config
+          sh '''
+            docker run -d \
+              --name juice-shop \
+              -p 0.0.0.0:3000:3000 \
+              -e NODE_ENV=production \
+              --health-cmd="curl -f http://localhost:3000 || exit 1" \
+              --health-interval=5s \
+              --restart unless-stopped \
+              juice-shop
+          '''
+          
+          // Wait for healthcheck
+          sleep(time: 30, unit: 'SECONDS')
+          
+          // Verify deployment
+          def status = sh(
+            script: 'docker inspect --format="{{.State.Status}}" juice-shop', 
+            returnStdout: true
+          ).trim()
+          
+          if (status != "running") {
+            error "Container failed to start (Status: ${status})"
+          }
         }
       }
     }
-  }
+    
+    stage('Verify Accessibility') {
+      steps {
+        script {
+          def accessible = sh(
+            script: 'curl -sSf http://localhost:3000 >/dev/null', 
+            returnStatus: true
+          )
+          if (accessible != 0) {
+            error "Application not accessible on port 3000"
+          } else {
+            echo "Juice Shop running at http://localhost:3000"
+          }
+        }
+      }
+    }
 
   post {
     always {
