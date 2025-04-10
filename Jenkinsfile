@@ -4,7 +4,7 @@ pipeline {
   environment {
     SONARQUBE_TOKEN = credentials('SONARQUBE_TOKEN')
     COMPUTER_NAME = "aicha"
-    DOCKER_HOSTNAME = "${COMPUTER_NAME}.local"
+// DOCKER_HOSTNAME = "${COMPUTER_NAME}.local"
   }
 
   stages {
@@ -21,7 +21,7 @@ pipeline {
             error "SonarQube token not found in credentials"
           }
           echo "Using SonarQube token: ${SONARQUBE_TOKEN.replaceAll('.', '*')}"
-          echo "Using hostname: ${DOCKER_HOSTNAME}"
+          echo "Using hostname: ${COMPUTER_NAME}"
         }
       }
     }
@@ -93,7 +93,7 @@ pipeline {
             docker run -d \
               --name juice-shop \
               -p 3000:3000 \
-              --add-host=${DOCKER_HOSTNAME}:host-gateway \
+              --add-host=${COMPUTER_NAME}:host-gateway \
               --health-cmd="curl -f http://localhost:3000 || exit 1" \
               --health-interval=10s \
               --health-start-period=60s \
@@ -105,7 +105,7 @@ pipeline {
           timeout(time: 2, unit: 'MINUTES') {
             waitUntil {
               def status = sh(
-                script: "curl -s -o /dev/null -w '%{http_code}' http://${DOCKER_HOSTNAME}:3000",
+                script: "curl -s -o /dev/null -w '%{http_code}' http://${COMPUTER_NAME}:3000",
                 returnStdout: true
               ).trim()
               return (status == "200")
@@ -122,7 +122,7 @@ pipeline {
       archiveArtifacts artifacts: '**/*report.*,**/docker-build.log', allowEmptyArchive: true
     }
     success {
-      echo "Pipeline succeeded! Application deployed to http://${DOCKER_HOSTNAME}:3000"
+      echo "Pipeline succeeded! Application deployed to http://${COMPUTER_NAME}:3000"
     }
     failure {
       echo 'Pipeline failed! Check security scan results'
