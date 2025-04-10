@@ -3,16 +3,13 @@ pipeline {
 
   environment {
     SONARQUBE_TOKEN = credentials('SONARQUBE_TOKEN')
-    HOST_IP = "10.17.0.154" 
+    //HOST_IP = sh(script: "ip route get 1 | awk '{print \$NF;exit}'", returnStdout: true).trim() // Auto-detect IP
+    HOST_IP = 10.17.0.154
     DEPLOYMENT_URL = "http://${HOST_IP}:3000"
   }
 
   stages {
-    stage('Checkout') {
-      steps {
-        checkout scm
-      }
-    }
+    stage('Checkout') { steps { checkout scm } }
 
     stage('Verify Environment') {
       steps {
@@ -20,8 +17,8 @@ pipeline {
           if (!env.SONARQUBE_TOKEN) {
             error "SonarQube token not found in credentials"
           }
-          // Masked output for security
           echo "Using SonarQube token: ${SONARQUBE_TOKEN.replaceAll('.', '*')}"
+          echo "Detected host IP: ${HOST_IP}"
         }
       }
     }
@@ -31,7 +28,13 @@ pipeline {
         script {
           def scannerHome = tool 'SonarQubeScanner'
           withSonarQubeEnv('SonarQube') {
-            sh "/var/jenkins_home/tools/hudson.plugins.sonar.SonarRunnerInstallation/SonarQubeScanner/bin/sonar-scanner -Dsonar.projectKey=juice-shop -Dsonar.sources=. -Dsonar.host.url=http://${HOST_IP}:9000 -Dsonar.login=${SONARQUBE_TOKEN}"
+            sh """
+              ${scannerHome}/bin/sonar-scanner \
+              -Dsonar.projectKey=juice-shop \
+              -Dsonar.sources=. \
+              -Dsonar.host.url=http://${HOST_IP}:9000 \
+              -Dsonar.login=${SONARQUBE_TOKEN}
+            """
           }
         }
       }
@@ -41,7 +44,6 @@ pipeline {
       steps {
         script {
           try {
-            // Modified to skip RetireJS and continue on vulnerabilities
             dependencyCheck additionalArguments: '''
               --scan . \
               --format HTML \
@@ -73,7 +75,6 @@ pipeline {
     stage('Build') {
       steps {
         script {
-          echo "Building Juice Shop container (IP: ${HOST_IP})"
           sh 'docker build --no-cache -t juice-shop . | tee docker-build.log'
           archiveArtifacts artifacts: 'docker-build.log'
         }
@@ -83,44 +84,33 @@ pipeline {
     stage('Deploy') {
       steps {
         script {
-          // Force remove any existing container
+          // Force cleanup
           sh 'docker rm -f juice-shop || true'
           
-          // Run with explicit IP binding
+          // Run with health checks
           sh """
             docker run -d \
               --name juice-shop \
               -p ${HOST_IP}:3000:3000 \
-              --restart unless-stopped \
+              --health-cmd="curl -f http://localhost:3000 || exit 1" \
+              --health-interval=5s \
+              --health-start-period=30s \
+              --health-retries=3 \
               juice-shop
           """
           
-          // Verify deployment (retry for 3 minutes)
-          def deployed = false
-          def attempts = 0
-          while(!deployed && attempts < 18) {
-            attempts++
-            try {
-              def status = sh(
-                script: "curl -s -o /dev/null -w '%{http_code}' ${DEPLOYMENT_URL} || echo 503",
-                returnStdout: true
-              ).trim()
-              
-              if (status == "200") {
-                deployed = true
-                echo "Application is live at ${DEPLOYMENT_URL}"
-              } else {
-                echo "Attempt ${attempts}/18: Service not ready (Status: ${status})"
-                sleep(time: 10, unit: 'SECONDS')
-              }
-            } catch (Exception e) {
-              echo "Attempt ${attempts}/18: Connection failed"
-              sleep(time: 10, unit: 'SECONDS')
-            }
-          }
+          // Fast verification (60s max)
+          def healthy = sh(
+            script: "timeout 60 docker inspect --format='{{.State.Health.Status}}' juice-shop | grep -q healthy",
+            returnStatus: true
+          ) == 0
           
-          if (!deployed) {
-            error "Deployment failed - Application not reachable at ${DEPLOYMENT_URL}"
+          if (!healthy) {
+            sh 'docker logs juice-shop > container-failure.log 2>&1'
+            error """Deployment failed! Verify manually:
+                   |1. Check IP: ${HOST_IP} (current: $(hostname -I))
+                   |2. Test: curl -v ${DEPLOYMENT_URL}
+                   |3. See container-failure.log""".stripMargin()
           }
         }
       }
@@ -129,35 +119,28 @@ pipeline {
 
   post {
     always {
-      echo "Collecting deployment logs..."
-      sh """
-        docker inspect juice-shop > container-inspect.json
-        docker logs juice-shop > container-logs.log 2>&1
-        netstat -tuln | grep 3000 > port-check.log || true
-      """
-      archiveArtifacts artifacts: '*.log,*.json'
+      archiveArtifacts artifacts: '**/*.log,**/*.json'
     }
     
     failure {
       script {
-        echo "TROUBLESHOOTING TIPS:"
-        echo "1. Verify your IP is still ${HOST_IP} (run: ipconfig)"
-        echo "2. Check port 3000 is open (run: netstat -ano | grep 3000)"
-        echo "3. Test manual access: curl -v ${DEPLOYMENT_URL}"
-        
-        mail to: 'aichabenzouina4@gmail.com',
-             subject: "Deployment Failed - Manual Action Required",
-             body: """
-               Deployment to ${DEPLOYMENT_URL} failed.
-               
-               REQUIRED ACTIONS:
-               1. Verify your current IP address
-               2. Check if port 3000 is available
-               3. Review attached logs
-               
-               Last error:
-               ${sh(script: 'tail -n 50 container-logs.log', returnStdout: true)}
-             """
+        // Use Jenkins Extended Email with SMTP config
+        emailext (
+          subject: "FAILED: ${env.JOB_NAME} #${env.BUILD_NUMBER}",
+          body: """
+            Deployment to ${DEPLOYMENT_URL} failed.
+            
+            Troubleshooting:
+            1. Verify host IP: ${HOST_IP}
+            2. Check port: netstat -tulnp | grep 3000
+            3. Container logs attached
+            
+            ${sh(script: 'tail -n 30 container-failure.log', returnStdout: true)}
+          """,
+          to: 'aichabenzouina4@gmail.com',
+          attachmentsPattern: '**/container-failure.log',
+          replyTo: 'no-reply@jenkins'
+        )
       }
     }
   }
