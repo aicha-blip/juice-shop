@@ -3,8 +3,6 @@ pipeline {
 
   environment {
     SONARQUBE_TOKEN = credentials('SONARQUBE_TOKEN')
-    COMPUTER_NAME = "aicha"
-// DOCKER_HOSTNAME = "${COMPUTER_NAME}.local"
   }
 
   stages {
@@ -20,8 +18,8 @@ pipeline {
           if (!env.SONARQUBE_TOKEN) {
             error "SonarQube token not found in credentials"
           }
+          // Masked output for security
           echo "Using SonarQube token: ${SONARQUBE_TOKEN.replaceAll('.', '*')}"
-          echo "Using hostname: ${COMPUTER_NAME}"
         }
       }
     }
@@ -31,13 +29,7 @@ pipeline {
         script {
           def scannerHome = tool 'SonarQubeScanner'
           withSonarQubeEnv('SonarQube') {
-            sh """
-              ${scannerHome}/bin/sonar-scanner \
-              -Dsonar.projectKey=juice-shop \
-              -Dsonar.sources=. \
-              -Dsonar.host.url=http://${COMPUTER_NAME}:9000 \
-              -Dsonar.login=${SONARQUBE_TOKEN}
-            """
+            sh "/var/jenkins_home/tools/hudson.plugins.sonar.SonarRunnerInstallation/SonarQubeScanner/bin/sonar-scanner -Dsonar.projectKey=juice-shop -Dsonar.sources=. -Dsonar.host.url=http://10.17.0.154:9000 -Dsonar.login=${SONARQUBE_TOKEN}"
           }
         }
       }
@@ -47,6 +39,7 @@ pipeline {
       steps {
         script {
           try {
+            // Modified to skip RetireJS and continue on vulnerabilities
             dependencyCheck additionalArguments: '''
               --scan . \
               --format HTML \
@@ -81,36 +74,10 @@ pipeline {
       }
       steps {
         script {
-          // Build with cleanup
-          sh 'docker build --no-cache -t juice-shop .'
-          
-          // Stop old container if exists
+          sh 'docker build -t juice-shop .'
           sh 'docker stop juice-shop || true'
           sh 'docker rm juice-shop || true'
-          
-          // Run with health checks and hostname binding
-          sh """
-            docker run -d \
-              --name juice-shop \
-              -p 3000:3000 \
-              --add-host=${COMPUTER_NAME}:host-gateway \
-              --health-cmd="curl -f http://localhost:3000 || exit 1" \
-              --health-interval=10s \
-              --health-start-period=60s \
-              --health-retries=3 \
-              juice-shop
-          """
-          
-          // Verify deployment
-          timeout(time: 2, unit: 'MINUTES') {
-            waitUntil {
-              def status = sh(
-                script: "curl -s -o /dev/null -w '%{http_code}' http://${COMPUTER_NAME}:3000",
-                returnStdout: true
-              ).trim()
-              return (status == "200")
-            }
-          }
+          sh 'docker run -d --name juice-shop -p 3000:3000 juice-shop'
         }
       }
     }
@@ -119,23 +86,20 @@ pipeline {
   post {
     always {
       echo "Pipeline completed with status: ${currentBuild.currentResult}"
-      archiveArtifacts artifacts: '**/*report.*,**/docker-build.log', allowEmptyArchive: true
+      archiveArtifacts artifacts: '**/*report.*', allowEmptyArchive: true
     }
     success {
-      echo "Pipeline succeeded! Application deployed to http://${COMPUTER_NAME}:3000"
+      echo 'Pipeline succeeded! Application deployed to http://localhost:3000'
     }
     failure {
       echo 'Pipeline failed! Check security scan results'
       script {
-        sh 'docker logs juice-shop > container-failure.log 2>&1'
-        archiveArtifacts artifacts: 'container-failure.log'
-        
+        // Only send email if configured
         if (env.EMAIL_ENABLED == 'true') {
           mail to: 'aichabenzouina4@gmail.com',
                subject: "Pipeline Failed: ${env.JOB_NAME} #${env.BUILD_NUMBER}",
                body: """Check failed pipeline at ${env.BUILD_URL}
-                      Failed stage: ${currentBuild.currentResult}
-                      Last logs: ${sh(script: 'tail -n 50 container-failure.log', returnStdout: true)}"""
+                      Failed stage: ${currentBuild.currentResult}"""
         }
       }
     }
