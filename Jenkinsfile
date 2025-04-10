@@ -8,6 +8,68 @@ pipeline {
   }
 
   stages {
+    stage('Checkout') {
+      steps {
+        checkout scm
+      }
+    }
+
+    stage('Verify Environment') {
+      steps {
+        script {
+          if (!env.SONARQUBE_TOKEN) {
+            error "SonarQube token not found in credentials"
+          }
+          // Masked output for security
+          echo "Using SonarQube token: ${SONARQUBE_TOKEN.replaceAll('.', '*')}"
+        }
+      }
+    }
+
+    stage('SonarQube Analysis') {
+      steps {
+        script {
+          def scannerHome = tool 'SonarQubeScanner'
+          withSonarQubeEnv('SonarQube') {
+            sh "/var/jenkins_home/tools/hudson.plugins.sonar.SonarRunnerInstallation/SonarQubeScanner/bin/sonar-scanner -Dsonar.projectKey=juice-shop -Dsonar.sources=. -Dsonar.host.url=http://${HOST_IP}:9000 -Dsonar.login=${SONARQUBE_TOKEN}"
+          }
+        }
+      }
+    }
+
+    stage('SCA Scan') {
+      steps {
+        script {
+          try {
+            // Modified to skip RetireJS and continue on vulnerabilities
+            dependencyCheck additionalArguments: '''
+              --scan . \
+              --format HTML \
+              --format XML \
+              --project "JuiceShop" \
+              --disableRetireJS \
+              --failOnCVSS 0''', 
+              odcInstallation: 'OWASP-DC'
+            
+            dependencyCheckPublisher pattern: '**/dependency-check-report.xml'
+            archiveArtifacts artifacts: '**/dependency-check-report.*', allowEmptyArchive: true
+            
+          } catch (Exception e) {
+            echo "SCA Scan completed with findings (not failing pipeline)"
+            unstable("Dependency-Check found vulnerabilities")
+          }
+        }
+      }
+    }
+
+    stage('Quality Gate') {
+      steps {
+        timeout(time: 5, unit: 'MINUTES') {
+          waitForQualityGate abortPipeline: false
+        }
+      }
+    }
+
     stage('Build') {
       steps {
         script {
