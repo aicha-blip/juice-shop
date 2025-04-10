@@ -4,7 +4,7 @@ pipeline {
   environment {
     SONARQUBE_TOKEN = credentials('SONARQUBE_TOKEN')
     //HOST_IP = sh(script: "ip route get 1 | awk '{print \$NF;exit}'", returnStdout: true).trim() // Auto-detect IP
-    HOST_IP = 10.17.0.154
+    HOST_IP = "10.17.0.154"
     DEPLOYMENT_URL = "http://${HOST_IP}:3000"
   }
 
