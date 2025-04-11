@@ -3,7 +3,7 @@ pipeline {
 
   environment {
     SONARQUBE_TOKEN = credentials('SONARQUBE_TOKEN')
-    HOST_IP = "10.17.0.154" 
+    HOST_IP = "10.17.0.85" 
     DEPLOYMENT_URL = "http://${HOST_IP}:3000"
   }
 
